@@ -775,14 +775,13 @@ def summarize_values_from_orders(files_pkl,targetname):
     params = ['teff','logg','feh','vsini']
     results = []
     for filename in files_pkl:
-        f = open(filename,'rb')
-        res = pickle.load(f)
+        with open(filename,'rb') as f:
+            res = pickle.load(f)
         results.append(res)
-        f.close()
     df = pd.DataFrame(results)
     df['filenames'] = files_pkl
-    medians = df.median(axis=0).values
-    stds = df.std(axis=0).values
+    medians = df[params].median(axis=0).values
+    stds = df[params].std(axis=0).values
     
     df_med = pd.DataFrame(list(zip(params,medians,stds)),columns=['parameters','median','std'])
     
