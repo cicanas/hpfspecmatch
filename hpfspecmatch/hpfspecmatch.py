@@ -28,7 +28,7 @@ rcParams["axes.formatter.useoffset"] = False
 rcParams['xtick.direction']='in'
 rcParams['ytick.direction']='in'
 
-def get_data_ready(H1,Hrefs,w,v,polyvals=None,vsinis=None,plot=False):
+def get_data_ready(H1,Hrefs,w,v,polyvals=None,vsinis=None,plot=False,absrv=None):
     """
     Get data ready for MCMC
     
@@ -53,7 +53,11 @@ def get_data_ready(H1,Hrefs,w,v,polyvals=None,vsinis=None,plot=False):
         summarize_values_from_orders(files,'AD_Leo')
     """
     H1.deblaze()
-    _, rabs = H1.rvabs_for_orders(v,orders=[5],plot=plot)
+    if absrv is None:
+        _, rabs = H1.rvabs_for_orders(v,orders=[5],plot=plot)
+    else:
+        _, rabs = H1.rvabs_for_orders(np.linspace(-2,2,1001)+absrv,orders=[17],plot=plot)
+        # rabs = absrv
     H1.redshift(rv=np.median(rabs))
     f1, e1 = H1.resample_order(w)
     print("Target={}, rv={:0.3f}km/s, rvmed={:0.3f}km/s".format(H1.target.name,H1.rv,np.median(rabs)))
@@ -118,7 +122,7 @@ class FitLinCombSpec(object):
     """
     A class to fit 5 lin-comb spectra together. Note: look at LPFunctionLinComb
     """
-    def __init__(self,LPFunctionLinComb,teffs=[],fehs=[],loggs=[],vsinis=[],
+    def __init__(self,LPFunctionLinComb,teffs=None,fehs=None,loggs=None,vsinis=None,
                  teff_known=None,tefferr_known=None,
                  feh_known=None,feherr_known=None,
                  logg_known=None,loggerr_known=None,targetname='',calibrate_feh=True):
@@ -137,22 +141,22 @@ class FitLinCombSpec(object):
         self.calibrate_feh = calibrate_feh
         
     def calculate_stellar_parameters(self,weights):
-        if self.teffs != []:
+        if self.teffs is not None:
             self.teff = weighted_value(self.teffs,weights)
         else: 
             self.teff = np.nan
-        if self.fehs != []:
+        if self.fehs is not None:
             self.feh = weighted_value(self.fehs,weights)
             if self.calibrate_feh:
                 print('Calibrating feh: {:0.3f} -> {:0.3f}'.format(self.feh,detrend_feh(self.feh)))
                 self.feh = detrend_feh(self.feh)
         else: 
             self.feh = np.nan
-        if self.loggs != []: 
+        if self.loggs is not None: 
             self.logg = weighted_value(self.loggs,weights)
         else: 
             self.logg = np.nan
-        if self.vsinis != []:
+        if self.vsinis is not None:
             self.vsini = weighted_value(self.vsinis,weights)
         print('Stellar parameters:')
         print('Teff [K]:',self.teff)
@@ -404,7 +408,7 @@ class FitTargetRefStarVsiniPolynomial(object):
             print("Finished MCMC")
 
     
-def chi2spectraPolyVsini(ww,H1,H2,rv1=None,rv2=None,plot=False,verbose=False,maxvsini=30.):
+def chi2spectraPolyVsini(ww,H1,H2,rv1=None,rv2=None,plot=False,verbose=False,maxvsini=50.):
     """
     INPUT:
         ww - wavelength grid to interpolate on (array)
@@ -446,7 +450,7 @@ def chi2spectraPolyVsini(ww,H1,H2,rv1=None,rv2=None,plot=False,verbose=False,max
     return chi2, vsini, coeffs
 
 
-def chi2spectraPolyLoop(ww,H1,Hrefs,plot_all=False,plot_chi=True,verbose=True,maxvsini=30.):
+def chi2spectraPolyLoop(ww,H1,Hrefs,plot_all=False,plot_chi=True,verbose=True,maxvsini=50.):
     """
     Calculate chi square - target and list of reference spectra
     
@@ -510,7 +514,7 @@ def weighted_value(values,weights):
     return np.dot(values,weights)
 
 def run_specmatch(Htarget,Hrefs,ww,v,df_library,df_target=None,plot=True,savefolder='out/',
-                  maxvsini=30.,calibrate_feh=True,scaleres=1.):
+                  maxvsini=50.,calibrate_feh=True,scaleres=1.,absrv=None):
     """
     Second chi2 loop, creates composite spectrum 
     
@@ -588,7 +592,7 @@ def run_specmatch(Htarget,Hrefs,ww,v,df_library,df_target=None,plot=True,savefol
     # STEP 2 LINEAR COMBINATION
     ##############################
     f1, e1, ffrefs, eerefs  = get_data_ready(Htarget,Hbest,ww,v,polyvals=df_chi_best.poly_params.values,
-                                             vsinis=df_chi_best.vsini.values)
+                                             vsinis=df_chi_best.vsini.values,absrv=absrv)
     L = LPFunctionLinComb(ww,f1,e1,ffrefs,eerefs)
     LCS = FitLinCombSpec(L,df_chi_best_total.Teff.values,
                          df_chi_best_total['[Fe/H]'].values,
@@ -791,7 +795,7 @@ def summarize_values_from_orders(files_pkl,targetname):
 
 def run_specmatch_for_orders(targetfile, targetname, outputdirectory='specmatch_results', HLS=None, 
                              path_df_lib=config.PATH_LIBRARY_DB, orders = ['4','5','6','14','15','16','17'],
-                             maxvsini=30.,calibrate_feh=True,scaleres=1.):
+                             maxvsini=50.,calibrate_feh=True,scaleres=1.,vmin=-250,vmax=250,vsize=3001, absrv = None):
     """
     run hpfspecmatch for a given target file and orders
     
@@ -841,7 +845,7 @@ def run_specmatch_for_orders(targetfile, targetname, outputdirectory='specmatch_
         wmin = config.BOUNDS[o][0] # Lower wavelength bound in A
         wmax = config.BOUNDS[o][1] # Upper wavelength bound in A
         ww = np.arange(wmin,wmax,0.01)   # Wavelength array to resample to
-        v = np.linspace(-125,125,1501)   # Velocities in km/s to use for absolute RV consideration
+        v = np.linspace(vmin,vmax,vsize)   # Velocities in km/s to use for absolute RV consideration
         savefolder = '{}/{}_{}/'.format(outputdirectory,Htarget.object,o) # foldername to save
 
         #############################################################
@@ -855,7 +859,8 @@ def run_specmatch_for_orders(targetfile, targetname, outputdirectory='specmatch_
                                                       savefolder=savefolder,
                                                       maxvsini=maxvsini,
                                                       calibrate_feh=calibrate_feh,
-                                                      scaleres=scaleres)
+                                                      scaleres=scaleres,
+                                                      absrv = absrv)
 
         
 def plot_crossvalidation_results_1d(order,df_crossval,savefolder):
