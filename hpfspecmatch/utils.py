@@ -6,7 +6,7 @@ import numpy as np
 import pickle
 import re
 import pandas as pd
-import radvel
+#import radvel
 from astroquery.simbad import Simbad
 import wget, zipfile, shutil
 from . import config
